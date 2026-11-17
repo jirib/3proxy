@@ -1943,14 +1943,20 @@ allowed traffic in megabytes (MB). nocountin allows you to set exclusions.
   <pre>
   nserver 192.168.1.2
   nserver 192.168.1.3:5353/tcp
-  nserver [2001:4860:4860::8844]</pre>
+  nserver [2001:4860:4860::8844]
+  nserver tls://1.1.1.3:853?family.cloudflare-dns.com
+  nserver tls://1.0.0.3:853?family.cloudflare-dns.com</pre>
  sets DNS resolvers. 192.168.1.3 will be used via TCP/5353 (instead of default UDP/53)
  only if 192.168.1.2 fails. Up to 5 nservers may be specified.
  If no nserver is configured, default system name resolution functions are used.
  An IPv6 address has to be written in square brackets.
+ <p>
+ DNS-over-TLS (DoT, RFC 7858) is supported via <code>tls://&lt;ip&gt;[:port]?&lt;hostname&gt;</code> syntax (requires SSL support).
+ Port defaults to 853 if omitted. The hostname after <code>?</code> is used for SNI and TLS certificate verification.
+ </p>
   <pre>
-  nscache 65535
-  nscache6 65535</pre>
+  nscache 65536
+  nscache6 65536</pre>
  sets name cache size for IPv4 and IPv6. The name cache must be large enough, if present.
  The name cache is only used if nserver is configured.
   <pre>

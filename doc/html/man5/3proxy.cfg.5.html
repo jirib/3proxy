@@ -533,18 +533,30 @@ experimental.</p>
 
 <p style="margin-left:9%; margin-top: 1em"><b>nserver</b>
 <i>&lt;ipaddr&gt;</i>[:<i>port</i>][/<i>tcp</i>] <br>
+<b>nserver</b> <b>tls://</b><i>&lt;ipaddr&gt;</i>[:<i>port</i>]?<i>&lt;hostname&gt;</i> <br>
 Nameserver to use for name resolutions. If none specified
 system routines for name resolution is used. Optional port
-number may be specified. If optional /tcp is added to IP
-address, name resolution is performed over TCP. An IPv6
-address has to be enclosed in square brackets: <b><br>
+number may be specified (defaults to 53 for plain DNS, 853 for TLS).
+If optional /tcp is added to IP address, name resolution is performed over TCP.
+If <b>tls://</b> is specified, name resolution is performed using DNS-over-TLS (DoT, RFC 7858),
+requiring 3proxy built with SSL support (<i>WITH_SSL</i>). The <i>&lt;hostname&gt;</i>
+specifies the TLS peer hostname for SNI and certificate validation against the system trust
+store or <b>ssl_client_ca_file</b>. TLS 1.2+ is enforced. If certificate verification fails
+or hostname mismatches, resolution fails without falling back to plaintext. Connections
+are reused across queries; if an upstream fails, 3proxy falls over to the next configured server.
+An IPv6 address has to be enclosed in square brackets: <b><br>
 nserver 1.1.1.1 <br>
 nserver [2001:4860:4860::8844] <br>
-nserver [2001:4860:4860::8844]:5353/tcp</b></p>
+nserver [2001:4860:4860::8844]:5353/tcp <br>
+nserver tls://1.1.1.3:853?family.cloudflare-dns.com <br>
+nserver tls://1.0.0.3:853?family.cloudflare-dns.com <br>
+nscache 65536 <br>
+nscache6 65536</b></p>
 
 
 <p style="margin-left:9%; margin-top: 1em"><b>authnserver</b>
 <i>&lt;ipaddr&gt;</i>[:<i>port</i>][/<i>tcp</i>] <br>
+<b>authnserver</b> <b>tls://</b><i>&lt;ipaddr&gt;</i>[:<i>port</i>]?<i>&lt;hostname&gt;</i> <br>
 Nameserver to use for DNS-based authentication (e.g. dnsname
 auth type). If not specified, nserver is used. The syntax is
 the same as for nserver.</p>

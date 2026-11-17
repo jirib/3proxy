@@ -166,6 +166,26 @@ void * dnsprchild(struct clientparam* param) {
 	buf[0] = (unsigned char)(id >> 8);
 	buf[1] = (unsigned char)(id & 0xff);
 	memcpy(question, buf, qend);
+	if(nservers[0].usetls) {
+		to = conf.timeouts[DNS_TO];
+		len = dot_query(&nservers[0], buf, i, buf, BUFSIZE, to);
+		if(len > 13 && dnsanswer(buf, len, question, qend)) {
+			param->statssrv64 += len;
+			param->nreads++;
+			buf[0] = cid[0];
+			buf[1] = cid[1];
+			if(buf[6] || buf[7]){
+				if(socksendto(param, param->clisock, (struct sockaddr *)&param->sincr, buf, len, conf.timeouts[SINGLEBYTE_L]*1000) != len){
+					RETURN(822);
+				}
+				RETURN(0);
+			}
+		}
+		else {
+			RETURN(821);
+		}
+	}
+	else {
 	if((param->remsock=param->srv->so._socket(param->sostate, SASOCK(&nservers[0].addr), nservers[0].usetcp? SOCK_STREAM:SOCK_DGRAM, nservers[0].usetcp?IPPROTO_TCP:IPPROTO_UDP)) == INVALID_SOCKET) {
 		RETURN(818);
 	}
@@ -229,6 +249,7 @@ void * dnsprchild(struct clientparam* param) {
 			RETURN(822);
 		}
 		RETURN(0);
+	}
 	}
 
  }

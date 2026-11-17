@@ -1084,6 +1084,14 @@ int h_client_ca_dir(int argc, unsigned char **argv){
 	return 0;
 }
 
+char * ssl_get_client_ca_file(void){
+	return client_ca_file;
+}
+
+char * ssl_get_client_ca_dir(void){
+	return client_ca_dir;
+}
+
 int h_client_ca_store(int argc, unsigned char **argv){
 	free(client_ca_store);
 	client_ca_store = argc > 1? strdup((char *)argv[1]) : NULL;

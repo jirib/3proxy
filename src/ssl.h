@@ -97,6 +97,8 @@ void _ssl_cert_free(SSL_CERT cert);
 //
 void ssl_init(void);
 char * getSSLErr(void);
+char * ssl_get_client_ca_file(void);
+char * ssl_get_client_ca_dir(void);
 
 //
 // Built-in SSL installation (called from 3proxy.c)

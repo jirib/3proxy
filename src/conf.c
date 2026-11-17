@@ -666,36 +666,78 @@ static int h_flushusers(int argc, unsigned char **argv){
 }
 */
 
-static int h_nserver(int argc, unsigned char **argv){
+static int parse_nserver_spec(unsigned char *arg, struct nserver *ns){
   char *str;
+  int ret;
 
-	if(numservers < MAXNSERVERS) {
-		if((str = strchr((char *)argv[1], '/')))
-			*str = 0;
-		*SAPORT(&nservers[numservers].addr) = htons(53);
-		if(parsehost(46, argv[1], (struct sockaddr *)&nservers[numservers].addr)) return 1;
-		if(str) {
-			nservers[numservers].usetcp = strstr(str + 1, "tcp")? 1:0;
-			*str = '/';
+	if(!arg || !*arg) return 1;
+
+	if(!strncasecmp((char *)arg, "tls://", 6)){
+#ifndef WITH_SSL
+		fprintf(stderr, "DNS-over-TLS (tls://) requires 3proxy built with SSL support\n");
+		return 1;
+#else
+		char *p = (char *)arg + 6;
+		char *q = strchr(p, '?');
+		char *hostpart;
+
+		if(!q || !q[1]){
+			fprintf(stderr, "DoT nserver requires peer hostname: tls://<ip>[:port]?<hostname>\n");
+			return 1;
 		}
-		numservers++;
+		if(strlen(q + 1) > 255 || strpbrk(q + 1, " \t\r\n/\\")){
+			fprintf(stderr, "Invalid peer hostname in DoT nserver: %s\n", q + 1);
+			return 1;
+		}
+		hostpart = (char *)malloc(q - p + 1);
+		if(!hostpart) return 1;
+		memcpy(hostpart, p, q - p);
+		hostpart[q - p] = 0;
 
+		dot_cleanup(ns);
+		memset(ns, 0, sizeof(struct nserver));
+		ns->dot_sock = INVALID_SOCKET;
+		*SAPORT(&ns->addr) = htons(853);
+		ret = parsehost(46, (unsigned char *)hostpart, (struct sockaddr *)&ns->addr);
+		free(hostpart);
+		if(ret) return 1;
+
+		ns->usetcp = 1;
+		ns->usetls = 1;
+		ns->hostname = strdup(q + 1);
+		if(!ns->hostname) return 1;
+		return 0;
+#endif
+	}
+
+	dot_cleanup(ns);
+	memset(ns, 0, sizeof(struct nserver));
+#ifdef WITH_SSL
+	ns->dot_sock = INVALID_SOCKET;
+#endif
+	if((str = strchr((char *)arg, '/')))
+		*str = 0;
+	*SAPORT(&ns->addr) = htons(53);
+	ret = parsehost(46, arg, (struct sockaddr *)&ns->addr);
+	if(str) {
+		ns->usetcp = strstr(str + 1, "tcp")? 1:0;
+		*str = '/';
+	}
+	if(ret) return 1;
+	return 0;
+}
+
+static int h_nserver(int argc, unsigned char **argv){
+	if(numservers < MAXNSERVERS) {
+		if(parse_nserver_spec(argv[1], &nservers[numservers])) return 1;
+		numservers++;
 	}
 	resolvfunc = myresolver;
 	return 0;
 }
 
 static int h_authnserver(int argc, unsigned char **argv){
-  char *str;
-
-	if((str = strchr((char *)argv[1], '/')))
-		*str = 0;
-	if(parsehost(46, argv[1], (struct sockaddr *)&authnserver.addr)) return 1;
-	*SAPORT(&authnserver.addr) = htons(53);
-	if(str) {
-		authnserver.usetcp = strstr(str + 1, "tcp")? 1:0;
-		*str = '/';
-	}
+	if(parse_nserver_spec(argv[1], &authnserver)) return 1;
 	return 0;
 }
 
@@ -2416,6 +2458,7 @@ void freeconf(struct extparam *confp){
  *SAFAMILY(&confp->extsa) = AF_INET;
  confp->maxchild = DEFAULT_MAXCHILD;
  confp->backlog = 0;
+ dot_cleanup_all();
  resolvfunc = NULL;
  numservers = 0;
  acl = confp->acl;
