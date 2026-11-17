@@ -23,7 +23,18 @@
 #include "proxy.h"
 #include "ssl.h"
 
-#ifndef _WIN32
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <wincrypt.h>
+#undef X509_NAME
+#undef X509_EXTENSIONS
+#undef X509_CERT_PAIR
+#undef PKCS7_ISSUER_AND_SERIAL
+#undef PKCS7_SIGNER_INFO
+#undef OCSP_RESPONSE
+#undef OCSP_REQUEST
+#else
 #define WINAPI
 #endif
 
@@ -38,6 +49,8 @@
 PROXYFUNC tcppmfunc, proxyfunc, smtppfunc, ftpprfunc;
 
 static struct pluginlink * pl;
+
+static void ssl_filter_close(void *fo);
 
 static struct alpn client_alpn_protos;
 
@@ -596,13 +609,32 @@ SSL_CTX * ssl_cli_ctx(SSL_CONFIG *config, X509 *server_cert, EVP_PKEY *server_ke
                 if(config->server_ca_file || config->server_ca_dir){
                     SSL_CTX_load_verify_locations(ctx, config->server_ca_file, config->server_ca_dir);
                 }
-#if !defined(WITH_WOLFSSL) && OPENSSL_VERSION_NUMBER >= 0x30000000L
+#ifdef _WIN32
+                else if(config->server_ca_store){
+                    if(ssl_load_windows_store(ctx, config->server_ca_store) == 0){
+                        fprintf(stderr, "3proxy SSL: failed to load CA store %s\n", config->server_ca_store);
+                        *errSSL = "failed to load configured CA store";
+                        SSL_CTX_free(ctx);
+                        return NULL;
+                    }
+                }
+                else {
+                    int loaded = 0;
+                    loaded += ssl_load_windows_store(ctx, "ROOT");
+                    loaded += ssl_load_windows_store(ctx, "CA");
+                    loaded += ssl_load_windows_store(ctx, "AuthRoot");
+                    if(loaded == 0) SSL_CTX_set_default_verify_paths(ctx);
+                }
+#elif !defined(WITH_WOLFSSL) && OPENSSL_VERSION_NUMBER >= 0x30000000L
                 else if(config->server_ca_store){
                     SSL_CTX_load_verify_store(ctx, config->server_ca_store);
                 }
-#endif
                 else
                     SSL_CTX_set_default_verify_paths(ctx);
+#else
+                else
+                    SSL_CTX_set_default_verify_paths(ctx);
+#endif
                 SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT|SSL_VERIFY_CLIENT_ONCE, NULL);
     }
     return ctx;
@@ -760,13 +792,31 @@ static void* ssl_filter_open(void * idata, struct srvparam * srv){
 		if(sc->client_ca_file || sc->client_ca_dir){
 		    SSL_CTX_load_verify_locations(sc->srv_ctx, sc->client_ca_file, sc->client_ca_dir);
 		}
-#if !defined(WITH_WOLFSSL) && OPENSSL_VERSION_NUMBER >= 0x30000000L
+#ifdef _WIN32
+		else if(sc->client_ca_store){
+		    if(ssl_load_windows_store(sc->srv_ctx, sc->client_ca_store) == 0){
+		        fprintf(stderr, "3proxy SSL: failed to load CA store %s\n", sc->client_ca_store);
+		        ssl_filter_close(sc);
+		        return NULL;
+		    }
+		}
+		else {
+		    int loaded = 0;
+		    loaded += ssl_load_windows_store(sc->srv_ctx, "ROOT");
+		    loaded += ssl_load_windows_store(sc->srv_ctx, "CA");
+		    loaded += ssl_load_windows_store(sc->srv_ctx, "AuthRoot");
+		    if(loaded == 0) SSL_CTX_set_default_verify_paths(sc->srv_ctx);
+		}
+#elif !defined(WITH_WOLFSSL) && OPENSSL_VERSION_NUMBER >= 0x30000000L
 		else if(sc->client_ca_store){
 		    SSL_CTX_load_verify_store(sc->srv_ctx, sc->client_ca_store);
 		}
-#endif
 		else
 		    SSL_CTX_set_default_verify_paths(sc->srv_ctx);
+#else
+		else
+		    SSL_CTX_set_default_verify_paths(sc->srv_ctx);
+#endif
 		SSL_CTX_set_verify(sc->srv_ctx, SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
 	    }
 #ifdef WITH_WOLFSSL
@@ -1084,10 +1134,56 @@ int h_client_ca_dir(int argc, unsigned char **argv){
 	return 0;
 }
 
+char * ssl_get_client_ca_file(void){
+	return client_ca_file;
+}
+
+char * ssl_get_client_ca_dir(void){
+	return client_ca_dir;
+}
+
 int h_client_ca_store(int argc, unsigned char **argv){
 	free(client_ca_store);
 	client_ca_store = argc > 1? strdup((char *)argv[1]) : NULL;
 	return 0;
+}
+
+char * ssl_get_client_ca_store(void){
+	return client_ca_store;
+}
+
+int ssl_load_windows_store(SSL_CTX *ctx, const char *store_name){
+#ifdef _WIN32
+	HCERTSTORE hStore;
+	PCCERT_CONTEXT pContext = NULL;
+	X509_STORE *store;
+	int count = 0;
+
+	if(!ctx) return 0;
+	if(!store_name || !*store_name) store_name = "ROOT";
+	hStore = CertOpenSystemStoreA(0, store_name);
+	if(!hStore) return 0;
+	store = SSL_CTX_get_cert_store(ctx);
+	if(!store){
+		CertCloseStore(hStore, 0);
+		return 0;
+	}
+	while((pContext = CertEnumCertificatesInStore(hStore, pContext))){
+		const unsigned char *p = pContext->pbCertEncoded;
+		X509 *x509 = d2i_X509(NULL, &p, pContext->cbCertEncoded);
+		if(x509){
+			if(X509_STORE_add_cert(store, x509)){
+				count++;
+			}
+			X509_free(x509);
+		}
+		ERR_clear_error();
+	}
+	CertCloseStore(hStore, 0);
+	return count;
+#else
+	return 0;
+#endif
 }
 
 int h_client_sni(int argc, unsigned char **argv){
