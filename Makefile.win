@@ -67,7 +67,7 @@ ifeq ($(LIBSTATIC), true)
 endif
 WOLFSSL_CHECK = $(shell printf "\#include <wolfssl/options.h>\\n\#include <wolfssl/openssl/ssl.h>\\n int main(){return 0;}" | tr -d '\\\\' | $(CC) -x c $(CFLAGS) $(LDFLAGS) $(STATIC_PREFIX) -lwolfssl $(STATIC_SUFFIX) -o testwssl - 2>/dev/null && rm testwssl && echo true||echo false)
 ifeq ($(WOLFSSL_CHECK), true)
-    LIBS += $(STATIC_PREFIX) -lwolfssl $(STATIC_SUFFIX) -lws2_32
+    LIBS += $(STATIC_PREFIX) -lwolfssl $(STATIC_SUFFIX) -lws2_32 -lcrypt32
     CFLAGS += -DWITH_SSL -DWITH_WOLFSSL
     SSL_OBJS = ssllib$(OBJSUFFICS) ssl$(OBJSUFFICS)
     ZLIB :=

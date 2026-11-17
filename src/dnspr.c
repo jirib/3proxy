@@ -166,69 +166,122 @@ void * dnsprchild(struct clientparam* param) {
 	buf[0] = (unsigned char)(id >> 8);
 	buf[1] = (unsigned char)(id & 0xff);
 	memcpy(question, buf, qend);
-	if((param->remsock=param->srv->so._socket(param->sostate, SASOCK(&nservers[0].addr), nservers[0].usetcp? SOCK_STREAM:SOCK_DGRAM, nservers[0].usetcp?IPPROTO_TCP:IPPROTO_UDP)) == INVALID_SOCKET) {
-		RETURN(818);
-	}
-	memset(&param->sinsl, 0, sizeof(param->sinsl));
-	*SAFAMILY(&param->sinsl) = *SAFAMILY(&nservers[0].addr);
-	if(bindwithrange(param, param->remsock, &param->sinsl, param->extport)) {
-		RETURN(819);
-	}
-	param->sinsr = nservers[0].addr;
-	if(nservers[0].usetcp) {
-		if(connectwithpoll(param, param->remsock,(struct sockaddr *)&param->sinsr,SASIZE(&param->sinsr),conf.timeouts[CONNECT_TO])) RETURN(830);
-		buf-=2;
-		*(unsigned short*)buf = htons(i);
-		i+=2;
-	}
-	else {
-#ifdef _WIN32
-		ioctlsocket(param->remsock, FIONBIO, &ul);
-#else
-		fcntl(param->remsock, F_SETFL, O_NONBLOCK | fcntl(param->remsock, F_GETFL));
-#endif
-	}
+	{
+		int ns_idx;
+		to = conf.timeouts[DNS_TO];
+		param->statscli64 += i;
+		param->nwrites++;
+		for(ns_idx = 0; ns_idx < numservers; ns_idx++) {
+			to = conf.timeouts[DNS_TO];
+			memcpy(buf, question, qend);
+			len = qend;
+			if(nservers[ns_idx].usetls){
+				unsigned char resp[BUFSIZE];
+				len = dot_query(&nservers[ns_idx], buf, i, resp, BUFSIZE, to);
+				if(len > 13 && dnsanswer(resp, len, question, qend)) {
+					param->statssrv64 += len;
+					param->nreads++;
+					resp[0] = cid[0];
+					resp[1] = cid[1];
+					param->sinsr = nservers[ns_idx].addr;
+					if(socksendto(param, param->clisock, (struct sockaddr *)&param->sincr, resp, len, conf.timeouts[SINGLEBYTE_L]*1000) != len){
+						RETURN(822);
+					}
+					RETURN(0);
+				}
+				continue;
+			}
 
-	if(socksendto(param, param->remsock, (struct sockaddr *)&param->sinsr, buf, i, conf.timeouts[SINGLEBYTE_L]*1000) != i){
-		RETURN(820);
-	}
-	param->statscli64 += i;
-	param->nwrites++;
-	/* over UDP only an answer from the name server asked is taken, any
-	   other read past while the time for it lasts */
-	deadline = time(NULL) + conf.timeouts[DNS_TO];
-	for(;;){
-		to = (int)(deadline - time(NULL));
-		if(to <= 0) RETURN(821);
-		len = sockrecvfrom(param, param->remsock, (struct sockaddr *)&from, buf, BUFSIZE, to*1000);
-		if(len <= 13) {
-			RETURN(821);
+			if((param->remsock=param->srv->so._socket(param->sostate, SASOCK(&nservers[ns_idx].addr), nservers[ns_idx].usetcp? SOCK_STREAM:SOCK_DGRAM, nservers[ns_idx].usetcp?IPPROTO_TCP:IPPROTO_UDP)) == INVALID_SOCKET) {
+				continue;
+			}
+			memset(&param->sinsl, 0, sizeof(param->sinsl));
+			*SAFAMILY(&param->sinsl) = *SAFAMILY(&nservers[ns_idx].addr);
+			if(bindwithrange(param, param->remsock, &param->sinsl, param->extport)) {
+				so._shutdown(param->sostate, param->remsock, SHUT_RDWR);
+				so._closesocket(param->sostate, param->remsock);
+				param->remsock = INVALID_SOCKET;
+				continue;
+			}
+			param->sinsr = nservers[ns_idx].addr;
+			if(nservers[ns_idx].usetcp) {
+				if(connectwithpoll(param, param->remsock,(struct sockaddr *)&param->sinsr,SASIZE(&param->sinsr),conf.timeouts[CONNECT_TO])) {
+					so._shutdown(param->sostate, param->remsock, SHUT_RDWR);
+					so._closesocket(param->sostate, param->remsock);
+					param->remsock = INVALID_SOCKET;
+					continue;
+				}
+				buf-=2;
+				*(unsigned short*)buf = htons(i);
+				i+=2;
+			}
+			else {
+#ifdef _WIN32
+				ioctlsocket(param->remsock, FIONBIO, &ul);
+#else
+				fcntl(param->remsock, F_SETFL, O_NONBLOCK | fcntl(param->remsock, F_GETFL));
+#endif
+			}
+
+			if(socksendto(param, param->remsock, (struct sockaddr *)&param->sinsr, buf, i, conf.timeouts[SINGLEBYTE_L]*1000) != i){
+				so._shutdown(param->sostate, param->remsock, SHUT_RDWR);
+				so._closesocket(param->sostate, param->remsock);
+				param->remsock = INVALID_SOCKET;
+				if(nservers[ns_idx].usetcp){ buf+=2; i-=2; }
+				continue;
+			}
+			/* over UDP only an answer from the name server asked is taken, any
+			   other read past while the time for it lasts */
+			deadline = time(NULL) + conf.timeouts[DNS_TO];
+			for(;;){
+				to = (int)(deadline - time(NULL));
+				if(to <= 0) { len = 0; break; }
+				len = sockrecvfrom(param, param->remsock, (struct sockaddr *)&from, buf, BUFSIZE, to*1000);
+				if(len <= 13) { len = 0; break; }
+				if(nservers[ns_idx].usetcp) break;
+				if(*SAFAMILY(&from) == *SAFAMILY(&param->sinsr) &&
+				   !memcmp(SAADDR(&from), SAADDR(&param->sinsr), SAADDRLEN(&param->sinsr)) &&
+				   *SAPORT(&from) == *SAPORT(&param->sinsr) &&
+				   dnsanswer(buf, len, question, qend)) break;
+			}
+			if(len <= 13){
+				so._shutdown(param->sostate, param->remsock, SHUT_RDWR);
+				so._closesocket(param->sostate, param->remsock);
+				param->remsock = INVALID_SOCKET;
+				if(nservers[ns_idx].usetcp){ buf+=2; i-=2; }
+				continue;
+			}
+			param->statssrv64 += len;
+			param->nreads++;
+			if(nservers[ns_idx].usetcp) {
+				unsigned short us;
+				us = ntohs(*(unsigned short *)buf);
+				if(us > 4096) {
+					so._shutdown(param->sostate, param->remsock, SHUT_RDWR);
+					so._closesocket(param->sostate, param->remsock);
+					param->remsock = INVALID_SOCKET;
+					buf+=2; i-=2;
+					continue;
+				}
+				buf += 2;
+				len -= 2;
+				if(len < us) len += sockgetlinebuf(param, SERVER, buf+len, us - len, 0, conf.timeouts[SINGLEBYTE_L]);
+				if(len != us || !dnsanswer(buf, len, question, qend)) {
+					so._shutdown(param->sostate, param->remsock, SHUT_RDWR);
+					so._closesocket(param->sostate, param->remsock);
+					param->remsock = INVALID_SOCKET;
+					buf+=2; i-=2;
+					continue;
+				}
+			}
+			buf[0] = cid[0];
+			buf[1] = cid[1];
+			if(socksendto(param, param->clisock, (struct sockaddr *)&param->sincr, buf, len, conf.timeouts[SINGLEBYTE_L]*1000) != len){
+				RETURN(822);
+			}
+			RETURN(0);
 		}
-		if(nservers[0].usetcp) break;
-		if(*SAFAMILY(&from) == *SAFAMILY(&param->sinsr) &&
-		   !memcmp(SAADDR(&from), SAADDR(&param->sinsr), SAADDRLEN(&param->sinsr)) &&
-		   *SAPORT(&from) == *SAPORT(&param->sinsr) &&
-		   dnsanswer(buf, len, question, qend)) break;
-	}
-	param->statssrv64 += len;
-	param->nreads++;
-	if(nservers[0].usetcp) {
-		unsigned short us;
-		us = ntohs(*(unsigned short *)buf);
-		if(us > 4096) RETURN(833);
-		buf += 2;
-		len -= 2;
-		if(len < us) len += sockgetlinebuf(param, SERVER, buf+len, us - len, 0, conf.timeouts[SINGLEBYTE_L]);
-		if(len != us) RETURN(832);
-		if(!dnsanswer(buf, len, question, qend)) RETURN(834);
-	}
-	buf[0] = cid[0];
-	buf[1] = cid[1];
-	if(buf[6] || buf[7]){
-		if(socksendto(param, param->clisock, (struct sockaddr *)&param->sincr, buf, len, conf.timeouts[SINGLEBYTE_L]*1000) != len){
-			RETURN(822);
-		}
-		RETURN(0);
+		RETURN(821);
 	}
 
  }

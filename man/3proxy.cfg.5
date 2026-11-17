@@ -528,22 +528,49 @@ Use \fBauthcache\fR to speedup authentication. RADIUS feature is currently exper
 .BR nserver
 \fI<ipaddr>\fR[:\fIport\fR][/\fItcp\fR]
 .br
+.BR nserver
+\fBtls://\fR\fI<ipaddr>\fR[:\fIport\fR]?\fI<hostname>\fR
+.br
  Nameserver to use for name resolutions. If none specified
 system routines for name resolution is
-used. Optional port number may be specified.
+used. Optional port number may be specified (defaults to 53 for plain DNS, 853 for TLS).
 If optional /tcp is added to IP address, name resolution is
 performed over TCP.
-An IPv6 address has to be enclosed in square brackets:
+.br
+If \fBtls://\fR is specified, name resolution is performed using DNS-over-TLS (DoT, RFC 7858).
+This requires 3proxy built with SSL support (\fIWITH_SSL\fR). The \fI<hostname>\fR parameter after
+the question mark specifies the TLS peer hostname used for Server Name Indication (SNI)
+and certificate validation. By default the system trust store is used (on Windows: the CryptoAPI ROOT, CA and AuthRoot stores).
+If \fBssl_client_ca_file\fR/\fBssl_client_ca_dir\fR is set it is used instead of the defaults; on Windows,
+\fBssl_client_ca_store\fR selects a CryptoAPI store name (e.g. ROOT) and is likewise used instead of the defaults.
+TLS 1.2 or later is enforced. If certificate verification fails or the hostname mismatches,
+the connection is aborted without falling back to unencrypted DNS.
+Persistent TLS connections are maintained and reused across queries; if an upstream
+fails or is closed, 3proxy reconnects and falls over to the next configured nameserver.
+An IPv6 address has to be enclosed in square brackets.
+.br
+Examples:
 .br
  \fBnserver 1.1.1.1\fR
 .br
  \fBnserver [2001:4860:4860::8844]\fR
 .br
  \fBnserver [2001:4860:4860::8844]:5353/tcp\fR
+.br
+ \fBnserver tls://1.1.1.3:853?family.cloudflare-dns.com\fR
+.br
+ \fBnserver tls://1.0.0.3:853?family.cloudflare-dns.com\fR
+.br
+ \fBnscache 65536\fR
+.br
+ \fBnscache6 65536\fR
 
 .br
 .BR authnserver
 \fI<ipaddr>\fR[:\fIport\fR][/\fItcp\fR]
+.br
+.BR authnserver
+\fBtls://\fR\fI<ipaddr>\fR[:\fIport\fR]?\fI<hostname>\fR
 .br
  Nameserver to use for DNS-based authentication (e.g. dnsname auth type).
 If not specified, nserver is used. The syntax is the same as for nserver.
@@ -1545,7 +1572,7 @@ SSL/TLS can be used for:
 \fI/path/to/cadir\fR - CA directory for ssl_server_verify
 .br
 .BR ssl_server_ca_store
-\fI/path/to/castore\fR - CA store for ssl_server_verify (OpenSSL 3.0+)
+\fIstore\fR - CA store for ssl_server_verify: an OpenSSL 3.0+ store URI, or a CryptoAPI store name on Windows
 .br
 .BR ssl_client_ca_file
 \fI/path/to/cafile\fR - CA file for ssl_client_verify
@@ -1554,7 +1581,7 @@ SSL/TLS can be used for:
 \fI/path/to/cadir\fR - CA directory for ssl_client_verify
 .br
 .BR ssl_client_ca_store
-\fI/path/to/castore\fR - CA store for ssl_client_verify (OpenSSL 3.0+)
+\fIstore\fR - CA store for ssl_client_verify and DoT: an OpenSSL 3.0+ store URI, or a CryptoAPI store name on Windows
 .br
 .BR ssl_client_sni
 \fIhostname\fR - SNI hostname to send to upstream server

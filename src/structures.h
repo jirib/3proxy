@@ -488,6 +488,13 @@ struct trafcount {
 struct nserver {
 	PROXYSOCKADDRTYPE addr;
 	int usetcp;
+	int usetls;
+	char *hostname;
+#ifdef WITH_SSL
+	void *dot_ctx;
+	void *dot_ssl;
+	SOCKET dot_sock;
+#endif
 };
 extern int numservers;
 

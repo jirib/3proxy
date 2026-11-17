@@ -533,18 +533,33 @@ experimental.</p>
 
 <p style="margin-left:9%; margin-top: 1em"><b>nserver</b>
 <i>&lt;ipaddr&gt;</i>[:<i>port</i>][/<i>tcp</i>] <br>
+<b>nserver</b> <b>tls://</b><i>&lt;ipaddr&gt;</i>[:<i>port</i>]?<i>&lt;hostname&gt;</i> <br>
 Nameserver to use for name resolutions. If none specified
 system routines for name resolution is used. Optional port
-number may be specified. If optional /tcp is added to IP
-address, name resolution is performed over TCP. An IPv6
-address has to be enclosed in square brackets: <b><br>
+number may be specified (defaults to 53 for plain DNS, 853 for TLS).
+If optional /tcp is added to IP address, name resolution is performed over TCP.
+If <b>tls://</b> is specified, name resolution is performed using DNS-over-TLS (DoT, RFC 7858),
+requiring 3proxy built with SSL support (<i>WITH_SSL</i>). The <i>&lt;hostname&gt;</i>
+specifies the TLS peer hostname for SNI and certificate validation.
+By default the system trust store is used (on Windows: the CryptoAPI ROOT, CA and AuthRoot stores).
+If <b>ssl_client_ca_file</b>/<b>ssl_client_ca_dir</b> is set it is used instead of the defaults; on Windows,
+<b>ssl_client_ca_store</b> selects a CryptoAPI store name (e.g. ROOT) and is likewise used instead of the defaults.
+TLS 1.2+ is enforced. If certificate verification fails
+or hostname mismatches, resolution fails without falling back to plaintext. Connections
+are reused across queries; if an upstream fails, 3proxy falls over to the next configured server.
+An IPv6 address has to be enclosed in square brackets: <b><br>
 nserver 1.1.1.1 <br>
 nserver [2001:4860:4860::8844] <br>
-nserver [2001:4860:4860::8844]:5353/tcp</b></p>
+nserver [2001:4860:4860::8844]:5353/tcp <br>
+nserver tls://1.1.1.3:853?family.cloudflare-dns.com <br>
+nserver tls://1.0.0.3:853?family.cloudflare-dns.com <br>
+nscache 65536 <br>
+nscache6 65536</b></p>
 
 
 <p style="margin-left:9%; margin-top: 1em"><b>authnserver</b>
 <i>&lt;ipaddr&gt;</i>[:<i>port</i>][/<i>tcp</i>] <br>
+<b>authnserver</b> <b>tls://</b><i>&lt;ipaddr&gt;</i>[:<i>port</i>]?<i>&lt;hostname&gt;</i> <br>
 Nameserver to use for DNS-based authentication (e.g. dnsname
 auth type). If not specified, nserver is used. The syntax is
 the same as for nserver.</p>
@@ -1493,14 +1508,14 @@ ssl_server_ca_key</b> <i>/path/to/cakey</i> - key for
 ssl_server_ca_file MITM CA <b><br>
 ssl_server_ca_dir</b> <i>/path/to/cadir</i> - CA directory
 for ssl_server_verify <b><br>
-ssl_server_ca_store</b> <i>/path/to/castore</i> - CA store
-for ssl_server_verify (OpenSSL 3.0+) <b><br>
+ssl_server_ca_store</b> <i>store</i> - CA store for
+ssl_server_verify: an OpenSSL 3.0+ store URI, or a CryptoAPI store name on Windows <b><br>
 ssl_client_ca_file</b> <i>/path/to/cafile</i> - CA file for
 ssl_client_verify <b><br>
 ssl_client_ca_dir</b> <i>/path/to/cadir</i> - CA directory
 for ssl_client_verify <b><br>
-ssl_client_ca_store</b> <i>/path/to/castore</i> - CA store
-for ssl_client_verify (OpenSSL 3.0+) <b><br>
+ssl_client_ca_store</b> <i>store</i> - CA store for
+ssl_client_verify and DoT: an OpenSSL 3.0+ store URI, or a CryptoAPI store name on Windows <b><br>
 ssl_client_sni</b> <i>hostname</i> - SNI hostname to send to
 upstream server <b><br>
 ssl_client_alpn</b> <i>protocol1 protocol2 ...</i> - ALPN

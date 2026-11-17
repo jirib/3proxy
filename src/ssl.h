@@ -97,6 +97,10 @@ void _ssl_cert_free(SSL_CERT cert);
 //
 void ssl_init(void);
 char * getSSLErr(void);
+char * ssl_get_client_ca_file(void);
+char * ssl_get_client_ca_dir(void);
+char * ssl_get_client_ca_store(void);
+int ssl_load_windows_store(SSL_CTX *ctx, const char *store_name);
 
 //
 // Built-in SSL installation (called from 3proxy.c)

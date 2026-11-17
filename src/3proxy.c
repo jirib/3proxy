@@ -573,6 +573,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int 
 #ifndef NORADIUS
   _3proxy_mutex_init(&rad_mutex);
 #endif
+  dot_init_mutexes();
   if(_3proxy_sem_init_timed(serviceexited, 0, 0x7fffffff)){
     fprintf(stderr, "semaphore init failed\n");
     return 1;
